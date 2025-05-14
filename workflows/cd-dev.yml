@@ -1,0 +1,52 @@
+name: CD to Dev
+
+# Триггер: только пуши в ветку dev
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  build-and-deploy:
+    name: 🚀 Build & Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: test    # скачиваем артефакты из CI, если используете артефакты
+    environment: dev
+
+    steps:
+      # 1. Checkout
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Авторизация в Docker Registry
+      - name: Login to Docker Registry
+        run: |
+          echo "${{ secrets.DOCKER_PASS }}" | docker login \
+            ${{ secrets.DOCKER_REGISTRY }} \
+            --username "${{ secrets.DOCKER_USER }}" \
+            --password-stdin
+
+      # 3. Собираем образ с тегом dev-<SHA>
+      - name: Build Docker image
+        run: |
+          TAG=dev-${{ github.sha }}
+          docker build -t ${{ secrets.DOCKER_REGISTRY }}/${{ github.repository }}:$TAG .
+
+      # 4. Пушим образ на registry
+      - name: Push image
+        run: |
+          TAG=dev-${{ github.sha }}
+          docker push ${{ secrets.DOCKER_REGISTRY }}/${{ github.repository }}:$TAG
+
+      # 5. Деплой на staging-сервер по SSH
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          key: ${{ secrets.DEV_SSH_KEY }}
+          script: |
+            cd /srv/${{ github.repository }} || exit 1
+            # Обновляем образ и поднимаем сервис
+            docker-compose -f docker-compose.dev.yml pull
+            docker-compose -f docker-compose.dev.yml up -d --remove-orphans

@@ -1,0 +1,57 @@
+name: CI
+
+# Триггеры: на пуш и PR в любые ветки dev и main (можно расширить при желании)
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  test:
+    name: 🧪 Run tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [python, node]  # поддерживаем Python и JS/TS
+
+    steps:
+      # 1) Получаем код
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2) Устанавливаем окружение
+      - name: Setup ${{ matrix.language }}
+        run: |
+          if [ "${{ matrix.language }}" == "python" ]; then
+            python -m pip install --upgrade pip
+          else
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+
+      # 3) Устанавливаем зависимости
+      - name: Install dependencies
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      # 4) Запускаем тесты
+      - name: Run tests
+        run: |
+          # Для Python
+          if command -v pytest &> /dev/null; then
+            pytest --maxfail=1 --disable-warnings -q
+          fi
+          # Для JavaScript/TypeScript
+          if grep -q '"test":' package.json; then
+            npm test
+          fi
